@@ -43,7 +43,7 @@ class AirSimDroneEnv(AirSimEnv):
         self.drone.moveByVelocityAsync(1, -0.67, -0.8, 5).join()
 
     def transform_obs(self, responses):
-        img1d = np.array(responses[0].image_data_float, dtype=np.float)
+        img1d = np.array(responses[0].image_data_float, dtype=np.float32)
         img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
         img2d = np.reshape(img1d, (responses[0].height, responses[0].width))
 
@@ -79,18 +79,20 @@ class AirSimDroneEnv(AirSimEnv):
         ).join()
 
     def _compute_reward(self):
-        thresh_dist = 7
+        thresh_dist_low = 20
+        # thresh_dist = 7
         beta = 1
-
+        done = False
         z = -10
-        pts = [
-            np.array([-0.55265, -31.9786, -19.0225]),
-            np.array([48.59735, -63.3286, -60.07256]),
-            np.array([193.5974, -55.0786, -46.32256]),
-            np.array([369.2474, 35.32137, -62.5725]),
-            np.array([541.3474, 143.6714, -32.07256]),
-        ]
+        # pts = [
+        #     np.array([-0.55265, -31.9786, -19.0225]),
+        #     np.array([48.59735, -63.3286, -60.07256]),
+        #     np.array([193.5974, -55.0786, -46.32256]),
+        #     np.array([369.2474, 35.32137, -62.5725]),
+        #     np.array([541.3474, 143.6714, -32.07256]),
+        # ]
 
+        target_position = np.array([-0.55265, -31.9786, -19.0225])
         quad_pt = np.array(
             list(
                 (
@@ -101,37 +103,76 @@ class AirSimDroneEnv(AirSimEnv):
             )
         )
 
-        if self.state["collision"]:
-            reward = -100
-        else:
-            dist = 10000000
-            for i in range(0, len(pts) - 1):
-                dist = min(
-                    dist,
-                    np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1])))
-                    / np.linalg.norm(pts[i] - pts[i + 1]),
-                )
-
-            if dist > thresh_dist:
-                reward = -10
-            else:
-                reward_dist = math.exp(-beta * dist) - 0.5
-                reward_speed = (
-                    np.linalg.norm(
-                        [
-                            self.state["velocity"].x_val,
-                            self.state["velocity"].y_val,
-                            self.state["velocity"].z_val,
-                        ]
+        reward_speed = (
+                        np.linalg.norm(
+                            [
+                                self.state["velocity"].x_val,
+                                self.state["velocity"].y_val,
+                                self.state["velocity"].z_val,
+                            ]
+                        )
+                        - 0.5
                     )
-                    - 0.5
-                )
-                reward = reward_dist + reward_speed
+        # reward = -1
+        # if self.state["collision"]:
+        #     reward = -100
+        # else:
+        #     dist = 10000000
+        #     for i in range(0, len(pts) - 1):
+        #         dist = min(
+        #             dist,
+        #             np.linalg.norm(np.cross((quad_pt - pts[i]), (quad_pt - pts[i + 1])))
+        #             / np.linalg.norm(pts[i] - pts[i + 1]),
+        #         )
+        # target_position = np.array(target)
+        max_reward = 10.0
 
-        done = 0
-        if reward <= -10:
-            done = 1
+        # Calculate distance to target
+        distance_to_target = np.linalg.norm(quad_pt - target_position)
+        print('Distance to Target', distance_to_target)
+        if thresh_dist_low > distance_to_target:
+            done = True
 
+        # Calculate velocity magnitude
+        velocity_magnitude = np.linalg.norm(reward_speed)
+        print(velocity_magnitude)
+
+        # Calculate reward for proximity to target
+        proximity_reward = max_reward - distance_to_target
+
+        collision_penalty = 0
+        # Calculate penalty for collision with obstacle
+        if self.state["collision"]:
+            collision_penalty = -max_reward
+            done = True
+
+        # # Calculate penalty for being too close to obstacle
+        # proximity_penalty = -obstacle_distance
+
+        # Calculate reward for velocity magnitude
+        velocity_reward = velocity_magnitude
+
+        # Combine rewards and penalties
+        reward = proximity_reward + collision_penalty + velocity_reward #  + proximity_penalty
+
+        #     if dist <= thresh_dist_low:
+        #         reward += 50
+        #     else:
+        #     # if dist > thresh_dist:
+        #     #     reward = -10
+        #     # else:
+        #         reward_dist = math.exp(-beta * dist) - 0.5
+        #
+        #     reward = reward_dist + reward_speed
+        #
+        # done = 0
+        if reward <= -max_reward:
+            done = True
+        print('Reward:', reward)
+        if done:
+            print('\nDone...\n')
+            self.reset()
+        print()
         return reward, done
 
     def step(self, action):

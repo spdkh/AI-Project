@@ -65,7 +65,7 @@ class AirSimCarEnv(AirSimEnv):
         time.sleep(1)
 
     def transform_obs(self, response):
-        img1d = np.array(response.image_data_float, dtype=np.float)
+        img1d = np.array(response.image_data_float, dtype=np.float32)
         img1d = 255 / np.maximum(np.ones(img1d.size), img1d)
         img2d = np.reshape(img1d, (response.height, response.width))
 
